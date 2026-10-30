@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Global Cyber Threat Command Center</title>
+<style>
+:root{--bg:#02050a;--red:#ff2a4d;--cyan:#00f0ff;--text:#cfe9ee;--dim:#7a959e;
+  --glass:rgba(8,16,26,.55);--edge:rgba(0,240,255,.25)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);overflow:hidden;
+  font-family:"SF Mono","Cascadia Mono",Consolas,Menlo,monospace}
+#stage{position:fixed;inset:0}
+#stage canvas{display:block;cursor:grab;touch-action:none}
+#labels{position:fixed;inset:0;pointer-events:none;overflow:hidden}
+.lbl{font-size:11px;font-weight:600;padding:3px 7px;border-radius:5px;white-space:nowrap;
+  background:rgba(3,8,14,.8);transition:opacity .25s;animation:pop .35s ease-out}
+.lbl.att{color:#ff6b84;border:1px solid var(--red);box-shadow:0 0 10px rgba(255,42,77,.6)}
+.lbl.tgt{color:var(--cyan);border:1px solid var(--cyan);box-shadow:0 0 10px rgba(0,240,255,.6)}
+@keyframes pop{from{transform:scale(.6);opacity:0}}
+
+#panel{position:fixed;top:16px;left:16px;bottom:16px;width:340px;max-width:calc(100vw - 32px);
+  display:flex;flex-direction:column;gap:12px;padding:16px;z-index:5;
+  background:var(--glass);border:1px solid var(--edge);border-radius:14px;
+  backdrop-filter:blur(16px) saturate(140%);-webkit-backdrop-filter:blur(16px) saturate(140%);
+  box-shadow:0 0 40px rgba(0,240,255,.08),inset 0 0 30px rgba(255,42,77,.04)}
+.head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+h1{font-size:14px;font-weight:600;letter-spacing:.06em;color:var(--cyan);text-shadow:0 0 10px rgba(0,240,255,.5)}
+.sub{font-size:11px;color:var(--dim);margin-top:3px}
+.btns{display:flex;gap:6px;flex-shrink:0}
+button{font:inherit;font-size:11px;color:var(--cyan);background:rgba(0,240,255,.08);border:1px solid var(--edge);
+  border-radius:8px;padding:6px 10px;cursor:pointer;min-height:32px}
+button[aria-pressed="true"]{background:rgba(0,240,255,.28);color:#fff}
+button:focus-visible{outline:2px solid var(--cyan);outline-offset:2px}
+.counter{padding:10px 14px;border:1px solid rgba(255,42,77,.35);border-radius:10px;background:rgba(255,42,77,.07)}
+.counter .l{font-size:11px;color:var(--dim)}
+.counter .n{font-size:36px;line-height:1.1;font-weight:700;color:var(--red);text-shadow:0 0 18px rgba(255,42,77,.7)}
+.counter .m{font-size:11px;color:var(--dim);margin-top:2px}
+h2{font-size:12px;font-weight:600;color:var(--cyan);display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 8px var(--red);animation:blink 1.2s infinite}
+@keyframes blink{50%{opacity:.25}}
+#top{list-style:none;font-size:11.5px}
+#top li{display:grid;grid-template-columns:1fr auto;gap:2px 8px;margin-bottom:5px}
+#top .bar{grid-column:1/3;height:3px;border-radius:2px;background:rgba(255,255,255,.08);overflow:hidden}
+#top .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--red),#ff8a9c);box-shadow:0 0 6px var(--red);transition:width .6s}
+#top b{color:var(--red)}
+.feedbox{flex:1;min-height:0;display:flex;flex-direction:column}
+#feed{flex:1;overflow-y:auto;list-style:none;font-size:11px;line-height:1.45;min-height:0;
+  scrollbar-width:thin;scrollbar-color:var(--edge) transparent}
+#feed li{padding:5px 0 5px 9px;margin-bottom:5px;border-left:2px solid var(--red);
+  background:linear-gradient(90deg,rgba(255,42,77,.09),transparent);word-break:break-word}
+#feed li.sys{border-color:var(--cyan);background:none;color:var(--dim)}
+#feed li.err{border-color:#ffb020;background:none;color:#ffb020}
+#feed li.typing::after{content:"▌";color:var(--cyan);animation:blink .6s infinite}
+#status{font-size:11px;color:var(--dim)}
+#panel.collapsed{bottom:auto;height:auto;gap:8px}
+#panel.collapsed>:not(.head){display:none}
+@media (max-width:640px){
+  #panel{top:auto;bottom:calc(8px + env(safe-area-inset-bottom,0px));left:8px;right:8px;width:auto;max-width:none;
+    height:40vh;padding:12px;gap:8px}
+  #panel.collapsed{height:auto}
+  .counter .n{font-size:28px}.sub{display:none}
+  .topbox{display:none}
+}
+@media (prefers-reduced-motion:reduce){.dot,.lbl,#feed li.typing::after{animation:none}}
+</style>
+</head>
+<body>
+<div id="stage"></div>
+<div id="labels"></div>
+
+<aside id="panel">
+  <div class="head">
+    <div><h1>CYBER THREAT COMMAND CENTER</h1><div class="sub">Live botnet C2 feed, simulated targets</div></div>
+    <div class="btns">
+      <button id="sound" aria-pressed="false">Sound Off</button>
+      <button id="fold" aria-label="Collapse panel">–</button>
+    </div>
+  </div>
+  <div class="counter">
+    <div class="l">Total Active Threats</div>
+    <div class="n" id="total">0</div>
+    <div class="m" id="meta">Waiting for data…</div>
+  </div>
+  <div class="topbox"><h2>Top Attacker Countries</h2><ul id="top"></ul></div>
+  <div class="feedbox">
+    <h2><span class="dot"></span>Live Threat Feed</h2>
+    <ul id="feed"></ul>
+  </div>
+  <div id="status">Starting…</div>
+</aside>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+<script>
+(() => {
+"use strict";
+const API = "https://threat-proxy.akijelectronic.workers.dev/";
+const TEXTURE = "textures/earth.jpg";
+const TEXTURE_FALLBACK = "https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg";
+const REFRESH_MS = 60000;
+const TRAVEL = 1.8, LIFE = 5;              // seconds: pulse travel time, label/arc lifetime
+const TARGETS = ["BD", "IN", "US", "GB", "DE", "JP", "AU", "BR"];
+const $ = id => document.getElementById(id);
+const mobile = matchMedia("(max-width:640px)").matches || /Android|iPhone|iPad/i.test(navigator.userAgent);
+const MAX_ACTIVE = mobile ? 4 : 7, INTERVAL = mobile ? 1900 : 1200;
+const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/* ---------- Country centroids: code lat lon name ---------- */
+const C = {};
+"US 38 -97 United States;CN 35 103 China;RU 61 105 Russia;DE 51 10 Germany;GB 54 -2 United Kingdom;FR 46 2 France;NL 52 5 Netherlands;IN 21 78 India;BD 24 90 Bangladesh;BR -14 -51 Brazil;CA 56 -106 Canada;AU -25 134 Australia;JP 36 138 Japan;KR 36 128 South Korea;SG 1.3 103.8 Singapore;HK 22.3 114.2 Hong Kong;UA 49 32 Ukraine;PL 52 20 Poland;IT 42 12 Italy;ES 40 -4 Spain;SE 62 15 Sweden;CH 47 8 Switzerland;TR 39 35 Turkey;IR 32 53 Iran;PK 30 70 Pakistan;ID -2 118 Indonesia;VN 16 108 Vietnam;TH 15 101 Thailand;MY 4 102 Malaysia;PH 12 122 Philippines;MX 23 -102 Mexico;AR -34 -64 Argentina;ZA -29 24 South Africa;NG 9 8 Nigeria;EG 27 30 Egypt;SA 24 45 Saudi Arabia;AE 24 54 UAE;IL 31 35 Israel;RO 46 25 Romania;BG 43 25 Bulgaria;CZ 49.8 15.5 Czechia;LT 55 24 Lithuania;LV 57 25 Latvia;EE 59 26 Estonia;FI 64 26 Finland;NO 61 9 Norway;IE 53 -8 Ireland;AT 47.5 14.5 Austria;BE 50.5 4.5 Belgium;PT 39.5 -8 Portugal;GR 39 22 Greece;HU 47 20 Hungary;KZ 48 67 Kazakhstan;MD 47 29 Moldova;BY 53 28 Belarus;LU 49.8 6.1 Luxembourg;TW 23.7 121 Taiwan;NZ -41 174 New Zealand;CL -30 -71 Chile;CO 4 -72 Colombia"
+  .split(";").forEach(s => { const p = s.split(" "); C[p[0]] = { code: p[0], lat: +p[1], lon: +p[2], name: p.slice(3).join(" ") }; });
+const CODES = Object.keys(C);
+function findCountry(v) {
+  if (!v) return null;
+  let s = String(v).trim();
+  const up = s.toUpperCase();
+  if (up === "UK") return C.GB;
+  if (C[up]) return C[up];
+  const low = s.toLowerCase();
+  return CODES.map(k => C[k]).find(c => c.name.toLowerCase() === low || low.includes(c.name.toLowerCase())) || null;
+}
+const rand = a => a[Math.floor(Math.random() * a.length)];
+
+/* ---------- UI ---------- */
+const feedEl = $("feed");
+let typeBusy = false; const typeQ = [];
+function feed(text, cls) {
+  typeQ.push([text, cls || ""]);
+  if (!typeBusy) typeNext();
+}
+function typeNext() {
+  const job = typeQ.shift();
+  if (!job) { typeBusy = false; return; }
+  typeBusy = true;
+  if (typeQ.length > 6) typeQ.splice(0, typeQ.length - 6);     // drop backlog, keep it live
+  const li = document.createElement("li");
+  li.className = job[1] + " typing";
+  feedEl.prepend(li);
+  while (feedEl.children.length > 40) feedEl.lastChild.remove();
+  const txt = job[0]; let i = 0;
+  (function step() {
+    i = Math.min(txt.length, i + 2);
+    li.textContent = txt.slice(0, i);
+    if (i < txt.length && !reduce) setTimeout(step, 16);
+    else { li.textContent = txt; li.classList.remove("typing"); setTimeout(typeNext, 120); }
+  })();
+}
+$("fold").onclick = () => {
+  const c = $("panel").classList.toggle("collapsed");
+  $("fold").textContent = c ? "+" : "–";
+};
+const setStatus = t => $("status").textContent = t;
+
+/* ---------- Audio ---------- */
+let ac = null, soundOn = false, lastBeep = 0;
+$("sound").onclick = () => {
+  soundOn = !soundOn;
+  if (soundOn && !ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) { soundOn = false; } }
+  if (ac && ac.state === "suspended") ac.resume();
+  $("sound").setAttribute("aria-pressed", soundOn);
+  $("sound").textContent = soundOn ? "Sound On" : "Sound Off";
+  if (soundOn) beep();
+};
+function beep() {
+  if (!soundOn || !ac) return;
+  const now = ac.currentTime;
+  if (now - lastBeep < 0.12) return; lastBeep = now;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = "sine";
+  o.frequency.setValueAtTime(1250, now);
+  o.frequency.exponentialRampToValueAtTime(620, now + 0.12);
+  g.gain.setValueAtTime(0.0001, now);
+  g.gain.exponentialRampToValueAtTime(0.05, now + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+  o.connect(g).connect(ac.destination);
+  o.start(now); o.stop(now + 0.18);
+}
+
+/* ---------- Three.js scene ---------- */
+const stage = $("stage");
+const renderer = new THREE.WebGLRenderer({ antialias: !mobile, alpha: false, powerPreference: "high-performance" });
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, mobile ? 1.5 : 2));
+renderer.setClearColor(0x02050a);
+stage.appendChild(renderer.domElement);
+const labelRenderer = new THREE.CSS2DRenderer({ element: $("labels") });
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 50);
+camera.position.z = mobile ? 4.4 : 3.3;
+const world = new THREE.Group(); scene.add(world);
+world.rotation.x = 0.35;
+
+const seg = mobile ? 40 : 64;
+const earthMat = new THREE.MeshBasicMaterial({ color: 0x0b2a44 });
+world.add(new THREE.Mesh(new THREE.SphereGeometry(1, seg, seg), earthMat));
+const loader = new THREE.TextureLoader();
+function applyTex(t) {
+  t.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  earthMat.map = t; earthMat.color.set(0xb4c8d8); earthMat.needsUpdate = true;
+}
+loader.load(TEXTURE, applyTex, undefined, () => {
+  feed("textures/earth.jpg not found, using online fallback texture.", "err");
+  loader.load(TEXTURE_FALLBACK, applyTex);
+});
+
+const atmoVS = "varying vec3 vN;void main(){vN=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}";
+const glow = (fs, side, s) => {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 48), new THREE.ShaderMaterial({
+    vertexShader: atmoVS, fragmentShader: fs, side, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+  m.scale.setScalar(s); scene.add(m);
+};
+glow("varying vec3 vN;void main(){float i=pow(0.68-dot(vN,vec3(0.,0.,1.)),3.);gl_FragColor=vec4(0.,.94,1.,1.)*i*1.7;}", THREE.BackSide, 1.16);
+glow("varying vec3 vN;void main(){float i=pow(1.0-dot(vN,vec3(0.,0.,1.)),3.);gl_FragColor=vec4(0.,.85,1.,1.)*i*0.55;}", THREE.FrontSide, 1.012);
+
+{ // starfield
+  const n = mobile ? 300 : 700, p = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const u = Math.random() * 2 - 1, a = Math.random() * 6.283, r = Math.sqrt(1 - u * u), d = 14 + Math.random() * 8;
+    p.set([r * Math.cos(a) * d, u * d, r * Math.sin(a) * d], i * 3);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute("position", new THREE.BufferAttribute(p, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ size: 0.05, color: 0x88aacc, transparent: true, opacity: .7, depthWrite: false })));
+}
+
+/* shared canvas textures */
+function canvasTex(draw) {
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  draw(c.getContext("2d")); return new THREE.CanvasTexture(c);
+}
+const glowTex = canvasTex(g => {
+  const r = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  r.addColorStop(0, "rgba(255,255,255,1)"); r.addColorStop(.25, "rgba(255,90,110,.85)"); r.addColorStop(1, "rgba(255,0,40,0)");
+  g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+});
+const ringTex = canvasTex(g => {
+  const r = g.createRadialGradient(32, 32, 14, 32, 32, 31);
+  r.addColorStop(0, "rgba(255,160,60,0)"); r.addColorStop(.7, "rgba(255,170,70,.95)"); r.addColorStop(1, "rgba(255,40,40,0)");
+  g.fillStyle = r; g.fillRect(0, 0, 64, 64);
+});
+const sprite = (tex, color) => new THREE.Sprite(new THREE.SpriteMaterial({
+  map: tex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+
+/* ---------- Geometry helpers ---------- */
+function ll2v(lat, lon, r = 1) {
+  const phi = (90 - lat) * Math.PI / 180, th = (lon + 180) * Math.PI / 180;
+  return new THREE.Vector3(-r * Math.sin(phi) * Math.cos(th), r * Math.cos(phi), r * Math.sin(phi) * Math.sin(th));
+}
+const jitter = () => (Math.random() - .5) * 5;
+
+/* ---------- Attacks ---------- */
+const active = [];
+const wv = new THREE.Vector3(), cv = new THREE.Vector3();
+let drawn = 0;
+const PTS = mobile ? 40 : 64;
+
+function makeLabel(cls, text, pos) {
+  const el = document.createElement("div"); el.className = "lbl " + cls; el.textContent = text;
+  const o = new THREE.CSS2DObject(el); o.position.copy(pos); world.add(o); return o;
+}
+
+function launch(att, tgt, malware) {
+  const a = ll2v(att.lat + jitter(), att.lon + jitter()), b = ll2v(tgt.lat + jitter() * .4, tgt.lon + jitter() * .4);
+  const ang = a.angleTo(b);
+  const mid = a.clone().add(b).normalize().multiplyScalar(1 + 0.3 + ang * 0.6);
+  const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
+  const geo = new THREE.BufferGeometry().setFromPoints(curve.getPoints(PTS - 1));
+  geo.setDrawRange(0, 0);
+  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
+    color: 0xff2a4d, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const head = sprite(glowTex, 0xffffff); head.scale.setScalar(.09);
+  const boom = sprite(glowTex, 0xffaa55), ring = sprite(ringTex, 0xffffff);
+  boom.visible = ring.visible = false; boom.position.copy(b); ring.position.copy(b);
+  world.add(line, head, boom, ring);
+  const l1 = makeLabel("att", "Attacker: " + att.name, a.clone().multiplyScalar(1.04));
+  const l2 = makeLabel("tgt", "Target: " + tgt.name, b.clone().multiplyScalar(1.04));
+  active.push({ born: performance.now() / 1000, curve, geo, line, head, boom, ring, labels: [l1, l2], hit: false, removedLabels: false });
+  drawn++;
+  beep();
+}
+
+function disposeAttack(e) {
+  world.remove(e.line, e.head, e.boom, e.ring);
+  e.geo.dispose(); e.line.material.dispose();
+  [e.head, e.boom, e.ring].forEach(s => s.material.dispose());
+  if (!e.removedLabels) removeLabels(e);
+}
+function removeLabels(e) {
+  e.labels.forEach(l => { world.remove(l); l.element.remove(); });
+  e.removedLabels = true;
+}
+
+function updateAttacks(now) {
+  for (let i = active.length - 1; i >= 0; i--) {
+    const e = active[i], age = now - e.born;
+    const t = Math.min(1, age / TRAVEL);
+    e.geo.setDrawRange(0, Math.max(2, Math.ceil(t * PTS)));
+    if (t < 1) {
+      e.head.position.copy(e.curve.getPoint(t));
+      e.head.scale.setScalar(.08 + .03 * Math.sin(age * 20));
+    } else {
+      e.head.visible = false;
+      if (!e.hit) { e.hit = true; e.boom.visible = e.ring.visible = true; }
+      const k = (age - TRAVEL) / 1.1;                       // explosion progress 0..1
+      if (k < 1) {
+        e.boom.scale.setScalar(.06 + .22 * Math.sqrt(k)); e.boom.material.opacity = 1 - k;
+        e.ring.scale.setScalar(.05 + .3 * k); e.ring.material.opacity = (1 - k) * .9;
+      } else { e.boom.visible = e.ring.visible = false; }
+      e.line.material.opacity = Math.max(0, 1 - (age - TRAVEL) / (LIFE - TRAVEL));
+    }
+    if (age > LIFE && !e.removedLabels) removeLabels(e);
+    if (age > LIFE + .1) { disposeAttack(e); active.splice(i, 1); continue; }
+    // hide labels on the far side of the globe
+    if (!e.removedLabels) e.labels.forEach(l => {
+      l.getWorldPosition(wv);
+      l.element.style.opacity = wv.clone().normalize().dot(cv.copy(camera.position).sub(wv).normalize()) > 0.05 ? 1 : 0;
+    });
+  }
+}
+
+/* ---------- Controls ---------- */
+const el = renderer.domElement;
+let drag = false, lx = 0, ly = 0, vel = 0;
+el.addEventListener("pointerdown", e => { drag = true; lx = e.clientX; ly = e.clientY; el.setPointerCapture(e.pointerId); });
+el.addEventListener("pointermove", e => {
+  if (!drag) return;
+  vel = (e.clientX - lx) * .005;
+  world.rotation.y += vel;
+  world.rotation.x = Math.max(-1.2, Math.min(1.2, world.rotation.x + (e.clientY - ly) * .005));
+  lx = e.clientX; ly = e.clientY;
+});
+["pointerup", "pointercancel"].forEach(n => el.addEventListener(n, () => drag = false));
+el.addEventListener("wheel", e => {
+  e.preventDefault();
+  camera.position.z = Math.max(1.8, Math.min(7, camera.position.z + e.deltaY * .002));
+}, { passive: false });
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  renderer.setSize(w, h); labelRenderer.setSize(w, h);
+  camera.aspect = w / h;
+  if (w > 640) camera.setViewOffset(w, h, -180, 0, w, h); else camera.clearViewOffset();   // keep globe clear of the panel
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize); resize();
+
+let visible = true;
+document.addEventListener("visibilitychange", () => visible = !document.hidden);
+(function loop() {
+  requestAnimationFrame(loop);
+  if (!visible) return;
+  if (!drag && !reduce) { world.rotation.y += vel * .92 + .0014; vel *= .92; }
+  updateAttacks(performance.now() / 1000);
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+})();
+
+/* ---------- Data ---------- */
+let queue = [];
+async function fetchThreats() {
+  const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 12000);
+  try {
+    const res = await fetch(API, { signal: ctl.signal });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const d = await res.json();
+    const list = Array.isArray(d) ? d : (d.blocklist || d.data || d.threats || d.results || []);
+    if (!Array.isArray(list) || !list.length) throw new Error("empty response");
+    return list.filter(x => x && x.ip_address);
+  } finally { clearTimeout(to); }
+}
+function renderTop(list) {
+  const cnt = {};
+  list.forEach(x => { const c = findCountry(x.country); const k = c ? c.name : (x.country || "Unknown"); cnt[k] = (cnt[k] || 0) + 1; });
+  const rows = Object.entries(cnt).sort((a, b) => b[1] - a[1]).slice(0, 5), max = rows[0] ? rows[0][1] : 1;
+  $("top").innerHTML = "";
+  rows.forEach(([n, v]) => {
+    const li = document.createElement("li");
+    const s = document.createElement("span"); s.textContent = n;
+    const b = document.createElement("b"); b.textContent = v;
+    const bar = document.createElement("div"); bar.className = "bar";
+    const i = document.createElement("i"); i.style.width = (v / max * 100) + "%"; bar.appendChild(i);
+    li.append(s, b, bar); $("top").appendChild(li);
+  });
+}
+let lastList = [], retryTimer = null;
+async function sync() {
+  clearTimeout(retryTimer);
+  setStatus("Syncing live threat data…");
+  try {
+    const list = await fetchThreats();
+    lastList = list;
+    $("total").textContent = list.length;
+    renderTop(list);
+    queue = list.map(x => ({ ...x })).sort(() => Math.random() - .5);
+    feed("Live sync OK: " + list.length + " threats received.", "sys");
+    setStatus("Live · next sync in " + REFRESH_MS / 1000 + "s");
+  } catch (e) {
+    feed("Live feed error: " + e.message + ". Retrying in 15s.", "err");
+    setStatus("Offline · retrying…");
+    retryTimer = setTimeout(sync, 15000);
+  }
+}
+
+function nextAttack() {
+  if (!visible || active.length >= MAX_ACTIVE || !lastList.length) return;
+  if (!queue.length) queue = lastList.map(x => ({ ...x })).sort(() => Math.random() - .5);
+  const item = queue.pop();
+  const att = findCountry(item.country);
+  if (!att) return;                                  // unknown country: skip, never invent one
+  let tgt = C[rand(TARGETS)], guard = 0;
+  while (tgt.code === att.code && guard++ < 10) tgt = C[rand(TARGETS)];
+  launch(att, tgt, item.malware);
+  $("meta").textContent = drawn + " attacks traced this session";
+  const t = new Date().toTimeString().slice(0, 8);
+  feed("[" + t + "] " + att.code + " → " + tgt.code + " | " + (item.malware || "Unknown malware") + " | " + item.ip_address);
+}
+
+sync();
+setInterval(sync, REFRESH_MS);
+setInterval(nextAttack, INTERVAL);
+})();
+</script>
+</body>
+</html>
